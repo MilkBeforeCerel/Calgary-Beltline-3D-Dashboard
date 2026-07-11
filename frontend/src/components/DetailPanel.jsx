@@ -9,48 +9,89 @@ function fmtMeters(v) {
   return `${v.toFixed(1)} m  (${feet.toFixed(0)} ft)`
 }
 
-export default function DetailPanel({ building, onClose }) {
-  const open = Boolean(building)
+function BuildingDetails({ building }) {
+  return (
+    <>
+      <div className="detail-eyebrow">Building {building.id}</div>
+      <div className="detail-address">{building.address || 'Address unavailable'}</div>
+
+      <div className="detail-grid">
+        <div className="detail-field">
+          <div className="detail-field-label">Height</div>
+          <div className="detail-field-value">{fmtMeters(building.height_m)}</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Year Built</div>
+          <div className="detail-field-value">{building.year_built || '—'}</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Zoning</div>
+          <div className="detail-field-value">{building.zoning || '—'}</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Assessed Value</div>
+          <div className="detail-field-value">{fmtCurrency(building.assessed_value)}</div>
+        </div>
+        <div className="detail-field full">
+          <div className="detail-field-label">Land Use</div>
+          <div className="detail-field-value">{building.land_use || '—'}</div>
+        </div>
+        <div className="detail-field full">
+          <div className="detail-field-label">Coordinates</div>
+          <div className="detail-field-value">{building.lat.toFixed(5)}, {building.lon.toFixed(5)}</div>
+        </div>
+      </div>
+
+      <div className="detail-source-note">
+        source: {building.source === 'live' ? 'City of Calgary Open Data (live)' : 'simulated demo data'}
+      </div>
+    </>
+  )
+}
+
+function PermitDetails({ permit }) {
+  return (
+    <>
+      <div className="detail-eyebrow">Permit {permit.id}</div>
+      <div className="detail-address">{permit.address || 'Address unavailable'}</div>
+
+      <div className="detail-grid">
+        <div className="detail-field">
+          <div className="detail-field-label">Permit Type</div>
+          <div className="detail-field-value">{permit.permit_type || '—'}</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Status</div>
+          <div className="detail-field-value">{permit.status || '—'}</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Estimated Cost</div>
+          <div className="detail-field-value">{fmtCurrency(permit.estimated_cost)}</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Issued</div>
+          <div className="detail-field-value">{permit.issued_date || '—'}</div>
+        </div>
+        <div className="detail-field full">
+          <div className="detail-field-label">Coordinates</div>
+          <div className="detail-field-value">{permit.lat.toFixed(5)}, {permit.lon.toFixed(5)}</div>
+        </div>
+      </div>
+
+      <div className="detail-source-note">
+        source: {permit.source === 'live' ? 'City of Calgary Open Data (live)' : 'simulated demo data'}
+      </div>
+    </>
+  )
+}
+
+export default function DetailPanel({ type, data, onClose }) {
+  const open = Boolean(data)
   return (
     <aside className={`detail-panel ${open ? 'open' : ''}`}>
       <button className="detail-close" onClick={onClose} aria-label="Close">✕</button>
-      {building && (
-        <>
-          <div className="detail-eyebrow">Building {building.id}</div>
-          <div className="detail-address">{building.address || 'Address unavailable'}</div>
-
-          <div className="detail-grid">
-            <div className="detail-field">
-              <div className="detail-field-label">Height</div>
-              <div className="detail-field-value">{fmtMeters(building.height_m)}</div>
-            </div>
-            <div className="detail-field">
-              <div className="detail-field-label">Year Built</div>
-              <div className="detail-field-value">{building.year_built || '—'}</div>
-            </div>
-            <div className="detail-field">
-              <div className="detail-field-label">Zoning</div>
-              <div className="detail-field-value">{building.zoning || '—'}</div>
-            </div>
-            <div className="detail-field">
-              <div className="detail-field-label">Assessed Value</div>
-              <div className="detail-field-value">{fmtCurrency(building.assessed_value)}</div>
-            </div>
-            <div className="detail-field full">
-              <div className="detail-field-label">Land Use</div>
-              <div className="detail-field-value">{building.land_use || '—'}</div>
-            </div>
-            <div className="detail-field full">
-              <div className="detail-field-label">Coordinates</div>
-              <div className="detail-field-value">{building.lat.toFixed(5)}, {building.lon.toFixed(5)}</div>
-            </div>
-          </div>
-
-          <div className="detail-source-note">
-            source: {building.source === 'live' ? 'City of Calgary Open Data (live)' : 'simulated demo data'}
-          </div>
-        </>
-      )}
+      {data && type === 'building' && <BuildingDetails building={data} />}
+      {data && type === 'permit' && <PermitDetails permit={data} />}
     </aside>
   )
 }

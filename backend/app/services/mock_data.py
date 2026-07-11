@@ -20,7 +20,7 @@ activity so every required query type in the spec has real matches:
 import random
 from typing import Dict, List
 
-from app.config import STUDY_AREA_CENTER
+from app.config import STUDY_AREA_CENTER, KNOWN_ZONING_CODES, LAND_USE_BY_ZONE
 from app.services import geo_utils
 
 _RNG = random.Random(42)  # fixed seed -> deterministic mock output
@@ -28,14 +28,7 @@ _RNG = random.Random(42)  # fixed seed -> deterministic mock output
 ORIGIN_LON, ORIGIN_LAT = STUDY_AREA_CENTER
 
 STREET_NAMES = ["17 Ave SW", "16 Ave SW", "1 St SW", "2 St SW"]
-ZONING_TYPES = ["R-CG", "CC-MH", "CC-COR", "DC", "M-C1"]
-LAND_USE_BY_ZONE = {
-    "R-CG": "Residential - Grade-Oriented Infill",
-    "CC-MH": "Centre City Multi-Residential High Rise",
-    "CC-COR": "Centre City Commercial Corridor",
-    "DC": "Direct Control",
-    "M-C1": "Multi-Residential Contextual Low Profile",
-}
+ZONING_TYPES = KNOWN_ZONING_CODES  # kept as a local alias -- see config.py for the shared definition
 PERMIT_TYPES = ["New Building", "Alteration", "Addition", "Demolition", "Tenant Improvement"]
 PERMIT_STATUSES = ["Issued", "In Review", "Completed", "Applied"]
 

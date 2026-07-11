@@ -36,6 +36,12 @@ this dev sandbox has no route to data.calgary.ca):
     No lat/lon columns -- joined to buildings via point-in-polygon: each
     building's footprint centroid is tested against each parcel's
     multipolygon boundary.
+
+  c2es-76ed (Building Permits) -- wired into get_map_data() below, but
+    field names are still best-guess (see _fetch_permits_raw for why: this
+    sandbox cannot reach data.calgary.ca to verify them against a live
+    response). Degrades to permits=[] on fetch failure without touching the
+    buildings/assessments result, same honesty rule as the assessments join.
 """
 import logging
 from collections import defaultdict
@@ -133,9 +139,14 @@ def _fetch_assessments_raw() -> List[Dict[str, Any]]:
 
 
 def _fetch_permits_raw() -> List[Dict[str, Any]]:
-    # NOTE: field candidates for this dataset are best-guess / unverified
-    # (see config.py) -- out of scope for the current buildings-only pass
-    # and not called yet from the router.
+    # NOTE: field candidates for this dataset (c2es-76ed) are best-guess,
+    # taken from typical Open Calgary permit dataset conventions -- this
+    # sandbox's egress proxy blocks data.calgary.ca outright, so the shape
+    # below has never been exercised against a real response the way
+    # buildings/assessments were (see README "Verifying against live data").
+    # Wired into get_map_data() below with the same resilience pattern as
+    # the assessments join: a failure here degrades to permits=[] on an
+    # otherwise-live response, it never falls back to mock permits.
     min_lon, min_lat, max_lon, max_lat = STUDY_AREA_BBOX
     fc = FIELD_CANDIDATES["permits"]
     where = (
@@ -287,9 +298,16 @@ def get_map_data() -> Dict[str, Any]:
         except Exception as e:  # noqa: BLE001
             logger.warning("Assessment join failed, continuing with footprints only: %s", e)
 
+        try:
+            permits_raw = _fetch_permits_raw()
+            permits = [p for p in (_normalize_permit(r) for r in permits_raw) if p is not None]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Permit fetch failed, continuing with permits=[]: %s", e)
+            permits = []
+
         return {
             "buildings": buildings,
-            "permits": [],  # permits layer not implemented in this pass
+            "permits": permits,
             "center": [ORIGIN_LON, ORIGIN_LAT],
             "source": "live",
         }

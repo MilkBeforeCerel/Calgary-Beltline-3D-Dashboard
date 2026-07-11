@@ -5,8 +5,20 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 const CYAN = 0x5eead4
 const BLUE = 0x5b9cf6
 const AMBER = 0xf5a623
+const HIGHLIGHT = 0x39ff88 // filter-match color -- distinct from CYAN/BLUE/AMBER and permit colors
 const GROUND = 0x0c1118
 const GRID_LINE = 0x1c2734
+
+const PIN_HEIGHT = 20
+const PIN_STEM_RADIUS = 0.6
+const PIN_HEAD_RADIUS = 2.2
+const PERMIT_STATUS_COLORS = {
+  Issued: 0x4ade80,
+  'In Review': 0xf5a623,
+  Completed: 0x5b9cf6,
+  Applied: 0x9ca8b6,
+}
+const PERMIT_DEFAULT_COLOR = 0x9ca8b6
 
 /**
  * Maps a building's zoning code to a base color. Falls back to a
@@ -19,6 +31,10 @@ function colorForBuilding(b) {
   if (zoning.startsWith('R-') || zoning.startsWith('M-')) return CYAN
   // fallback: taller = bluer, shorter = cyan-er
   return b.height_m > 30 ? BLUE : CYAN
+}
+
+function colorForPermit(p) {
+  return PERMIT_STATUS_COLORS[p.status] ?? PERMIT_DEFAULT_COLOR
 }
 
 /**
@@ -69,6 +85,46 @@ function buildingMesh(building) {
   return mesh
 }
 
+/**
+ * Builds a permit "pin" (thin stem + head) as two flat sibling meshes, NOT
+ * nested in a THREE.Group -- Object3D.raycast() is a no-op, so a Group
+ * would silently swallow raycasts and make pins unclickable. Both meshes
+ * carry userData.permit so either one can be hit directly.
+ *
+ * Positions must match the same world-space transform buildings undergo:
+ * buildingMesh() rotates the footprint shape so local (x, y) -> world
+ * (x, -y) (see the rotateX(-Math.PI/2) comment above). Permit x/y are
+ * already local meters relative to the same study-area origin, so pins
+ * use worldZ = -permit.y to line up with the buildings they sit beside.
+ */
+function buildPermitMeshes(permit) {
+  const color = colorForPermit(permit)
+  const worldX = permit.x
+  const worldZ = -permit.y
+
+  const stemGeo = new THREE.CylinderGeometry(PIN_STEM_RADIUS * 0.4, PIN_STEM_RADIUS, PIN_HEIGHT, 8)
+  const stemMat = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.5 })
+  const stem = new THREE.Mesh(stemGeo, stemMat)
+  stem.position.set(worldX, PIN_HEIGHT / 2, worldZ)
+  stem.userData.permit = permit
+  stem.userData.baseColor = color
+
+  const headGeo = new THREE.SphereGeometry(PIN_HEAD_RADIUS, 12, 10)
+  const headMat = new THREE.MeshStandardMaterial({
+    color,
+    metalness: 0.2,
+    roughness: 0.35,
+    emissive: color,
+    emissiveIntensity: 0.25,
+  })
+  const head = new THREE.Mesh(headGeo, headMat)
+  head.position.set(worldX, PIN_HEIGHT + PIN_HEAD_RADIUS * 0.6, worldZ)
+  head.userData.permit = permit
+  head.userData.baseColor = color
+
+  return [stem, head]
+}
+
 function buildGroundGrid(sizeMeters) {
   const group = new THREE.Group()
 
@@ -86,9 +142,62 @@ function buildGroundGrid(sizeMeters) {
   return group
 }
 
-export default function Scene3D({ buildings, selectedId, onSelectBuilding }) {
+/**
+ * Visual-state precedence for a building mesh: click-selected beats
+ * filter-matched beats filter-dimmed beats normal zoning color. Called
+ * both from the dedicated selection/filter effect AND immediately after
+ * (re)building meshes, so a data refetch never flashes unstyled meshes.
+ */
+function applyBuildingVisualState(mesh, selectedType, selectedId, matchedIds) {
+  const b = mesh.userData.building
+  const isSelected = selectedType === 'building' && b.id === selectedId
+  const filterActive = matchedIds != null
+  const isMatched = filterActive && matchedIds.has(b.id)
+
+  if (isSelected) {
+    mesh.material.color.set(AMBER)
+    mesh.material.opacity = 1
+  } else if (isMatched) {
+    mesh.material.color.set(HIGHLIGHT)
+    mesh.material.opacity = 0.95
+  } else if (filterActive) {
+    mesh.material.color.set(mesh.userData.baseColor)
+    mesh.material.opacity = 0.12
+  } else {
+    mesh.material.color.set(mesh.userData.baseColor)
+    mesh.material.opacity = 0.82
+  }
+}
+
+function applyPermitVisualState(mesh, selectedType, selectedId) {
+  const p = mesh.userData.permit
+  const isSelected = selectedType === 'permit' && p.id === selectedId
+  mesh.material.color.set(isSelected ? AMBER : mesh.userData.baseColor)
+  mesh.material.emissiveIntensity = isSelected ? 0.6 : 0.25
+}
+
+function applyAllVisualStates(state) {
+  const { buildingsGroup, permitsGroup, selectedType, selectedId, matchedIds } = state
+  if (buildingsGroup) {
+    buildingsGroup.children.forEach((mesh) => applyBuildingVisualState(mesh, selectedType, selectedId, matchedIds))
+  }
+  if (permitsGroup) {
+    permitsGroup.children.forEach((mesh) => applyPermitVisualState(mesh, selectedType, selectedId))
+  }
+}
+
+export default function Scene3D({ buildings, permits, showPermits, matchedIds, selectedType, selectedId, onSelect }) {
   const hostRef = useRef(null)
   const stateRef = useRef({})
+
+  // Keep the latest selection/filter/visibility state available to effects
+  // and callbacks that intentionally don't re-subscribe on every render
+  // (the pointerdown handler in particular, set up once below).
+  stateRef.current.selectedType = selectedType
+  stateRef.current.selectedId = selectedId
+  stateRef.current.matchedIds = matchedIds
+  stateRef.current.permits = permits
+  stateRef.current.showPermits = showPermits
 
   // ---- one-time scene setup ----
   useEffect(() => {
@@ -127,6 +236,10 @@ export default function Scene3D({ buildings, selectedId, onSelectBuilding }) {
     const buildingsGroup = new THREE.Group()
     scene.add(buildingsGroup)
 
+    const permitsGroup = new THREE.Group()
+    permitsGroup.visible = stateRef.current.showPermits
+    scene.add(permitsGroup)
+
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
 
@@ -135,12 +248,19 @@ export default function Scene3D({ buildings, selectedId, onSelectBuilding }) {
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera(pointer, camera)
-      const hits = raycaster.intersectObjects(buildingsGroup.children, false)
+
+      const targets = stateRef.current.showPermits
+        ? [...buildingsGroup.children, ...permitsGroup.children]
+        : buildingsGroup.children
+      const hits = raycaster.intersectObjects(targets, false)
+
       if (hits.length > 0) {
-        const building = hits[0].object.userData.building
-        onSelectBuilding(building)
+        const hit = hits[0].object
+        if (hit.userData.building) onSelect('building', hit.userData.building)
+        else if (hit.userData.permit) onSelect('permit', hit.userData.permit)
+        else onSelect(null, null)
       } else {
-        onSelectBuilding(null)
+        onSelect(null, null)
       }
     }
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
@@ -162,7 +282,16 @@ export default function Scene3D({ buildings, selectedId, onSelectBuilding }) {
     }
     window.addEventListener('resize', onResize)
 
-    stateRef.current = { scene, camera, renderer, controls, buildingsGroup, raycaster }
+    stateRef.current = {
+      ...stateRef.current,
+      scene,
+      camera,
+      renderer,
+      controls,
+      buildingsGroup,
+      permitsGroup,
+      raycaster,
+    }
 
     return () => {
       cancelAnimationFrame(frameId)
@@ -174,21 +303,17 @@ export default function Scene3D({ buildings, selectedId, onSelectBuilding }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ---- (re)build building meshes whenever the data set changes ----
+  // ---- (re)build building meshes + ground whenever the data set changes ----
   useEffect(() => {
     const { scene, buildingsGroup, controls, camera } = stateRef.current
     if (!scene || !buildings) return
 
-    // clear previous
     while (buildingsGroup.children.length) {
       const m = buildingsGroup.children.pop()
       m.geometry?.dispose()
       m.material?.dispose()
     }
-    // remove old ground if present
-    scene.children
-      .filter((c) => c.userData?.isGround)
-      .forEach((c) => scene.remove(c))
+    scene.children.filter((c) => c.userData?.isGround).forEach((c) => scene.remove(c))
 
     if (buildings.length === 0) return
 
@@ -198,17 +323,17 @@ export default function Scene3D({ buildings, selectedId, onSelectBuilding }) {
         maxExtent = Math.max(maxExtent, Math.abs(x), Math.abs(y))
       })
     })
+    ;(stateRef.current.permits || []).forEach((p) => {
+      maxExtent = Math.max(maxExtent, Math.abs(p.x), Math.abs(p.y))
+    })
 
     const ground = buildGroundGrid(maxExtent * 2)
     ground.userData.isGround = true
     scene.add(ground)
 
-    buildings.forEach((b) => {
-      const mesh = buildingMesh(b)
-      buildingsGroup.add(mesh)
-    })
+    buildings.forEach((b) => buildingsGroup.add(buildingMesh(b)))
+    applyAllVisualStates(stateRef.current)
 
-    // frame the camera to the data extent
     if (controls && camera) {
       const dist = Math.max(120, maxExtent * 1.6)
       camera.position.set(dist * 0.7, dist * 0.62, dist * 0.9)
@@ -217,17 +342,31 @@ export default function Scene3D({ buildings, selectedId, onSelectBuilding }) {
     }
   }, [buildings])
 
-  // ---- highlight selection ----
+  // ---- (re)build permit pins whenever the permits data set changes ----
   useEffect(() => {
-    const { buildingsGroup } = stateRef.current
-    if (!buildingsGroup) return
-    buildingsGroup.children.forEach((mesh) => {
-      const isSelected = mesh.userData.building?.id === selectedId
-      mesh.material.color.set(isSelected ? AMBER : mesh.userData.baseColor)
-      mesh.material.opacity = isSelected ? 1 : 0.82
-      mesh.scale.y = 1 // reserved for future pulse/animation
-    })
-  }, [selectedId])
+    const { scene, permitsGroup } = stateRef.current
+    if (!scene || !permits) return
+
+    while (permitsGroup.children.length) {
+      const m = permitsGroup.children.pop()
+      m.geometry?.dispose()
+      m.material?.dispose()
+    }
+
+    permits.forEach((p) => buildPermitMeshes(p).forEach((m) => permitsGroup.add(m)))
+    applyAllVisualStates(stateRef.current)
+  }, [permits])
+
+  // ---- toggle permit layer visibility (no rebuild) ----
+  useEffect(() => {
+    const { permitsGroup } = stateRef.current
+    if (permitsGroup) permitsGroup.visible = showPermits
+  }, [showPermits])
+
+  // ---- selection + filter highlight precedence ----
+  useEffect(() => {
+    applyAllVisualStates(stateRef.current)
+  }, [selectedType, selectedId, matchedIds])
 
   return <div ref={hostRef} className="canvas-host" />
 }

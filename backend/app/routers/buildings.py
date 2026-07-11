@@ -24,11 +24,9 @@ def get_buildings():
     always reports which source was used via `source`.
     """
     data = calgary_client.get_map_data()
-    # Step 1/2 only needs buildings; permits are fetched by calgary_client
-    # too but simply unused here for now.
     return MapDataOut(
         buildings=data["buildings"],
-        permits=[],
+        permits=data["permits"],
         center=data["center"],
         source=data["source"],
     )

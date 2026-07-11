@@ -15,7 +15,10 @@ list -- no other code changes needed.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 # ---------------------------------------------------------------------------
 # Study area: 3-4 city blocks in Calgary's Beltline (dense, mixed-use, lots
@@ -95,6 +98,25 @@ FIELD_CANDIDATES = {
 }
 
 # ---------------------------------------------------------------------------
+# Zoning reference data -- single source of truth shared by mock_data.py
+# (generating realistic demo buildings), llm_service.py (few-shot prompt
+# context + fallback keyword parser), and documented here for anyone reading
+# the schema. Scene3D.jsx's colorForBuilding() on the frontend mirrors the
+# COMMERCIAL/RESIDENTIAL prefix split below -- keep them in sync by hand if
+# either changes.
+# ---------------------------------------------------------------------------
+KNOWN_ZONING_CODES = ["R-CG", "CC-MH", "CC-COR", "DC", "M-C1"]
+LAND_USE_BY_ZONE = {
+    "R-CG": "Residential - Grade-Oriented Infill",
+    "CC-MH": "Centre City Multi-Residential High Rise",
+    "CC-COR": "Centre City Commercial Corridor",
+    "DC": "Direct Control",
+    "M-C1": "Multi-Residential Contextual Low Profile",
+}
+COMMERCIAL_ZONING_PREFIXES = ("CC", "DC")
+RESIDENTIAL_ZONING_PREFIXES = ("R-", "M-")
+
+# ---------------------------------------------------------------------------
 # LLM (natural-language query parsing)
 # ---------------------------------------------------------------------------
 # Groq offers a free-tier OpenAI-compatible chat completions API and is the
@@ -104,6 +126,38 @@ FIELD_CANDIDATES = {
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
+
+# Fields the LLM (and the keyword fallback) is allowed to filter buildings
+# on. "unit" tells llm_service._convert_units what deterministic conversion
+# to apply -- the LLM itself is only asked for the raw value + unit it saw
+# in the query text, never for unit math (see llm_service.py docstring).
+FILTERABLE_FIELDS = {
+    "height_m": {
+        "type": "number",
+        "unit": "meters",
+        "description": "building height above ground; source data is in meters",
+    },
+    "assessed_value": {
+        "type": "number",
+        "unit": "dollars",
+        "description": "property assessed value in CAD dollars",
+    },
+    "zoning": {
+        "type": "string",
+        "unit": None,
+        "description": f"land-use zoning code, one of {KNOWN_ZONING_CODES}",
+    },
+    "land_use": {
+        "type": "string",
+        "unit": None,
+        "description": "free-text land-use description, e.g. " + "; ".join(LAND_USE_BY_ZONE.values()),
+    },
+    "year_built": {
+        "type": "number",
+        "unit": "year",
+        "description": "year of construction",
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Database
