@@ -85,6 +85,58 @@ function PermitDetails({ permit }) {
   )
 }
 
+function HydrantDetails({ hydrant }) {
+  return (
+    <>
+      <div className="detail-eyebrow">Fire Hydrant {hydrant.id}</div>
+      <div className="detail-address">{hydrant.hydrant_type || 'Fire hydrant'}</div>
+
+      <div className="detail-grid">
+        <div className="detail-field full">
+          <div className="detail-field-label">Status</div>
+          <div className="detail-field-value">{hydrant.status || '—'}</div>
+        </div>
+        <div className="detail-field full">
+          <div className="detail-field-label">Coordinates</div>
+          <div className="detail-field-value">{hydrant.lat.toFixed(5)}, {hydrant.lon.toFixed(5)}</div>
+        </div>
+      </div>
+
+      <div className="detail-source-note">
+        source: {hydrant.source === 'live' ? 'City of Calgary Open Data (live)' : 'simulated demo data'}
+      </div>
+    </>
+  )
+}
+
+function TransitDetails({ stop }) {
+  return (
+    <>
+      <div className="detail-eyebrow">Transit Stop {stop.id}</div>
+      <div className="detail-address">{stop.stop_name || 'Stop'}</div>
+
+      <div className="detail-grid">
+        <div className="detail-field">
+          <div className="detail-field-label">Mode</div>
+          <div className="detail-field-value">{stop.route_type || '—'}</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Routes</div>
+          <div className="detail-field-value">{stop.routes && stop.routes.length ? stop.routes.join(', ') : '—'}</div>
+        </div>
+        <div className="detail-field full">
+          <div className="detail-field-label">Coordinates</div>
+          <div className="detail-field-value">{stop.lat.toFixed(5)}, {stop.lon.toFixed(5)}</div>
+        </div>
+      </div>
+
+      <div className="detail-source-note">
+        source: {stop.source === 'live' ? 'City of Calgary Open Data (live)' : 'simulated demo data'}
+      </div>
+    </>
+  )
+}
+
 export default function DetailPanel({ type, data, onClose }) {
   const open = Boolean(data)
   return (
@@ -92,6 +144,8 @@ export default function DetailPanel({ type, data, onClose }) {
       <button className="detail-close" onClick={onClose} aria-label="Close">✕</button>
       {data && type === 'building' && <BuildingDetails building={data} />}
       {data && type === 'permit' && <PermitDetails permit={data} />}
+      {data && type === 'hydrant' && <HydrantDetails hydrant={data} />}
+      {data && type === 'transit' && <TransitDetails stop={data} />}
     </aside>
   )
 }

@@ -31,6 +31,16 @@ STREET_NAMES = ["17 Ave SW", "16 Ave SW", "1 St SW", "2 St SW"]
 ZONING_TYPES = KNOWN_ZONING_CODES  # kept as a local alias -- see config.py for the shared definition
 PERMIT_TYPES = ["New Building", "Alteration", "Addition", "Demolition", "Tenant Improvement"]
 PERMIT_STATUSES = ["Issued", "In Review", "Completed", "Applied"]
+HYDRANT_STATUSES = ["In Service", "Out of Service", "Needs Repair"]
+TRANSIT_ROUTE_TYPES = ["Bus", "LRT"]
+BUS_ROUTES = ["3", "10", "17", "route unknown"]
+LRT_ROUTES = ["Red Line", "Blue Line"]
+
+
+def _local_to_lonlat(x: float, y: float) -> tuple:
+    lat = ORIGIN_LAT + (y / geo_utils.EARTH_RADIUS_M) * (180 / 3.14159265)
+    lon = ORIGIN_LON + (x / (geo_utils.EARTH_RADIUS_M * 0.62)) * (180 / 3.14159265)
+    return round(lat, 6), round(lon, 6)
 
 
 def _make_block(block_row: int, block_col: int) -> List[dict]:
@@ -70,8 +80,7 @@ def _make_block(block_row: int, block_col: int) -> List[dict]:
 
         centroid_x, centroid_y = geo_utils.polygon_centroid(footprint)
         # Rough inverse projection back to lon/lat for popups/markers.
-        lat = ORIGIN_LAT + (centroid_y / geo_utils.EARTH_RADIUS_M) * (180 / 3.14159265)
-        lon = ORIGIN_LON + (centroid_x / (geo_utils.EARTH_RADIUS_M * 0.62)) * (180 / 3.14159265)
+        lat, lon = _local_to_lonlat(centroid_x, centroid_y)
 
         buildings.append(
             {
@@ -108,8 +117,7 @@ def generate_permits(buildings: List[dict]) -> List[dict]:
         cx, cy = b["centroid"]
         jitter_x = cx + _RNG.uniform(-6, 6)
         jitter_y = cy + _RNG.uniform(-6, 6)
-        lat = ORIGIN_LAT + (jitter_y / geo_utils.EARTH_RADIUS_M) * (180 / 3.14159265)
-        lon = ORIGIN_LON + (jitter_x / (geo_utils.EARTH_RADIUS_M * 0.62)) * (180 / 3.14159265)
+        lat, lon = _local_to_lonlat(jitter_x, jitter_y)
         permits.append(
             {
                 "id": f"PERMIT-MOCK-{i}",
@@ -126,3 +134,54 @@ def generate_permits(buildings: List[dict]) -> List[dict]:
             }
         )
     return permits
+
+
+def generate_fire_hydrants(buildings: List[dict]) -> List[dict]:
+    """Scatter fire hydrants at roughly regular intervals along block edges."""
+    hydrants = []
+    sample = _RNG.sample(buildings, k=min(12, len(buildings)))
+    for i, b in enumerate(sample):
+        cx, cy = b["centroid"]
+        x = cx + _RNG.choice([-1, 1]) * _RNG.uniform(12, 20)
+        y = cy + _RNG.choice([-1, 1]) * _RNG.uniform(12, 20)
+        lat, lon = _local_to_lonlat(x, y)
+        hydrants.append(
+            {
+                "id": f"HYDRANT-MOCK-{i}",
+                "status": _RNG.choices(HYDRANT_STATUSES, weights=[85, 10, 5])[0],
+                "hydrant_type": "Standard Dry Barrel",
+                "x": x,
+                "y": y,
+                "lat": lat,
+                "lon": lon,
+                "source": "mock",
+            }
+        )
+    return hydrants
+
+
+def generate_transit_stops(buildings: List[dict]) -> List[dict]:
+    """Scatter a small number of transit stops (mostly bus, one LRT) along the study area."""
+    stops = []
+    sample = _RNG.sample(buildings, k=min(5, len(buildings)))
+    for i, b in enumerate(sample):
+        cx, cy = b["centroid"]
+        x = cx + _RNG.choice([-1, 1]) * _RNG.uniform(14, 22)
+        y = cy + _RNG.choice([-1, 1]) * _RNG.uniform(14, 22)
+        lat, lon = _local_to_lonlat(x, y)
+        route_type = "LRT" if i == 0 else "Bus"
+        routes = _RNG.sample(LRT_ROUTES, k=1) if route_type == "LRT" else _RNG.sample(BUS_ROUTES[:-1], k=_RNG.randint(1, 2))
+        stops.append(
+            {
+                "id": f"TRANSIT-MOCK-{i}",
+                "stop_name": f"{b['address'].split(' ', 1)[-1]} Stop",
+                "route_type": route_type,
+                "routes": routes,
+                "x": x,
+                "y": y,
+                "lat": lat,
+                "lon": lon,
+                "source": "mock",
+            }
+        )
+    return stops

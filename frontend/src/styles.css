@@ -85,6 +85,13 @@ html, body, #root {
   border-radius: 4px;
 }
 
+.brand-text {
+  background: rgba(16, 22, 31, 0.7);
+  backdrop-filter: blur(8px);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
 .brand-title {
   font-size: 17px;
   font-weight: 600;
@@ -261,11 +268,74 @@ html, body, #root {
 
 .legend-row:last-child { margin-bottom: 0; }
 
+.legend-title-spaced {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-700);
+}
+
+.legend-title-collapsible {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.legend-title-collapsible:hover {
+  color: var(--text-300);
+}
+
+.legend-arrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  transition: transform 180ms ease;
+  transform: rotate(-90deg); /* collapsed: points at (right toward) hidden content */
+}
+
+.legend-arrow.open {
+  transform: rotate(0deg); /* expanded: points down at the content below */
+}
+
+/* ---------------------------------------------------------------- */
+/* Map light/dark theme toggle                                       */
+/* ---------------------------------------------------------------- */
+.map-theme-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.map-theme-toggle button {
+  flex: 1;
+  background: var(--panel-800);
+  border: 1px solid var(--line-700);
+  color: var(--text-500);
+  border-radius: 6px;
+  padding: 4px 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.map-theme-toggle button:hover {
+  color: var(--text-300);
+}
+
+.map-theme-toggle button.active {
+  background: var(--cyan-400);
+  border-color: var(--cyan-400);
+  color: var(--ink-950);
+  font-weight: 600;
+}
+
 .legend-toggle {
   cursor: pointer;
-  padding-top: 8px;
-  margin-top: 2px;
-  border-top: 1px solid var(--line-700);
 }
 
 .legend-toggle input {
@@ -287,6 +357,31 @@ html, body, #root {
   color: var(--text-700);
   font-size: 10.5px;
   line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- */
+/* Map tile attribution (required by CARTO/OSM tile usage terms)     */
+/* ---------------------------------------------------------------- */
+.map-attribution {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  z-index: 10;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-700);
+  background: rgba(8, 11, 16, 0.55);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.map-attribution a {
+  color: var(--text-500);
+}
+
+.map-attribution a:hover {
+  color: var(--text-300);
 }
 
 /* ---------------------------------------------------------------- */

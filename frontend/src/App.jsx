@@ -11,11 +11,19 @@ const USERNAME_STORAGE_KEY = 'masiv:username'
 export default function App() {
   const [buildings, setBuildings] = useState(null)
   const [permits, setPermits] = useState([])
+  const [hydrants, setHydrants] = useState([])
+  const [transitStops, setTransitStops] = useState([])
+  const [mapCenter, setMapCenter] = useState(null)
+  const [mapTheme, setMapTheme] = useState('light')
   const [source, setSource] = useState(null)
   const [error, setError] = useState(null)
   const [selectedType, setSelectedType] = useState(null)
   const [selectedData, setSelectedData] = useState(null)
   const [showPermits, setShowPermits] = useState(true)
+  const [showHydrants, setShowHydrants] = useState(true)
+  const [showTransit, setShowTransit] = useState(true)
+  const [showZoningKey, setShowZoningKey] = useState(true)
+  const [showLiveDataLayers, setShowLiveDataLayers] = useState(true)
 
   // Active filter: conditions come either from a fresh LLM query or a
   // loaded saved project -- both paths funnel through applyFilter() below
@@ -42,6 +50,9 @@ export default function App() {
         if (cancelled) return
         setBuildings(data.buildings)
         setPermits(data.permits)
+        setHydrants(data.hydrants)
+        setTransitStops(data.transit_stops)
+        setMapCenter(data.center)
         setSource(data.source)
       })
       .catch((err) => {
@@ -144,21 +155,11 @@ export default function App() {
     <div className="app-shell">
       <div className="topbar">
         <div className="brand">
-          <span className="brand-mark">MASIV</span>
-          <div>
+          <div className="brand-text">
             <div className="brand-title">3D City Dashboard</div>
-            <div className="brand-sub">Calgary Beltline · 4-block prototype</div>
+            <div className="brand-sub">Calgary Beltline</div>
           </div>
         </div>
-
-        {source && (
-          <div className="status-chip">
-            <span className={`status-dot ${source === 'mock' ? 'mock' : ''}`} />
-            {source === 'live'
-              ? 'Live — City of Calgary Open Data'
-              : 'Demo data — live API unreachable, showing simulated blocks'}
-          </div>
-        )}
       </div>
 
       {loading && (
@@ -182,7 +183,13 @@ export default function App() {
         <Scene3D
           buildings={buildings}
           permits={permits}
+          hydrants={hydrants}
+          transitStops={transitStops}
+          mapCenter={mapCenter}
+          mapTheme={mapTheme}
           showPermits={showPermits}
+          showHydrants={showHydrants}
+          showTransit={showTransit}
           matchedIds={matchedIds}
           selectedType={selectedType}
           selectedId={selectedData?.id}
@@ -219,38 +226,111 @@ export default function App() {
 
       {buildings && (
         <div className="legend">
-          <div className="legend-title">Zoning key</div>
-          <div className="legend-row">
-            <span className="legend-swatch" style={{ background: '#5eead4' }} />
-            Residential (R-*, M-*)
-          </div>
-          <div className="legend-row">
-            <span className="legend-swatch" style={{ background: '#5b9cf6' }} />
-            Commercial / Direct Control (CC-*, DC)
-          </div>
-          <div className="legend-row">
-            <span className="legend-swatch" style={{ background: '#f5a623' }} />
-            Selected building
-          </div>
-          {matchedIds && (
-            <div className="legend-row">
-              <span className="legend-swatch" style={{ background: '#39ff88' }} />
-              Matches active query ({matchedIds.size})
-            </div>
+          <button
+            type="button"
+            className="legend-title legend-title-collapsible"
+            onClick={() => setShowZoningKey((v) => !v)}
+            aria-expanded={showZoningKey}
+          >
+            Zoning key
+            <span className={`legend-arrow ${showZoningKey ? 'open' : ''}`} aria-hidden="true">▾</span>
+          </button>
+          {showZoningKey && (
+            <>
+              <div className="legend-row">
+                <span className="legend-swatch" style={{ background: '#5eead4' }} />
+                Residential (R-*, M-*)
+              </div>
+              <div className="legend-row">
+                <span className="legend-swatch" style={{ background: '#5b9cf6' }} />
+                Commercial / Direct Control (CC-*, DC)
+              </div>
+              <div className="legend-row">
+                <span className="legend-swatch" style={{ background: '#f5a623' }} />
+                Selected building
+              </div>
+              {matchedIds && (
+                <div className="legend-row">
+                  <span className="legend-swatch" style={{ background: '#39ff88' }} />
+                  Matches active query ({matchedIds.size})
+                </div>
+              )}
+            </>
           )}
-          <label className="legend-row legend-toggle">
-            <input
-              type="checkbox"
-              checked={showPermits}
-              onChange={(e) => setShowPermits(e.target.checked)}
-            />
-            Show building permits ({permits.length})
-          </label>
+          <button
+            type="button"
+            className="legend-title legend-title-spaced legend-title-collapsible"
+            onClick={() => setShowLiveDataLayers((v) => !v)}
+            aria-expanded={showLiveDataLayers}
+          >
+            Live city data layers
+            <span className={`legend-arrow ${showLiveDataLayers ? 'open' : ''}`} aria-hidden="true">▾</span>
+          </button>
+          {showLiveDataLayers && (
+            <>
+              <label className="legend-row legend-toggle">
+                <input
+                  type="checkbox"
+                  checked={showPermits}
+                  onChange={(e) => setShowPermits(e.target.checked)}
+                />
+                <span className="legend-swatch" style={{ background: '#4ade80' }} />
+                Building permits ({permits.length})
+              </label>
+              <label className="legend-row legend-toggle">
+                <input
+                  type="checkbox"
+                  checked={showHydrants}
+                  onChange={(e) => setShowHydrants(e.target.checked)}
+                />
+                <span className="legend-swatch" style={{ background: '#e63946' }} />
+                Fire hydrants ({hydrants.length})
+              </label>
+              <label className="legend-row legend-toggle">
+                <input
+                  type="checkbox"
+                  checked={showTransit}
+                  onChange={(e) => setShowTransit(e.target.checked)}
+                />
+                <span className="legend-swatch" style={{ background: '#a78bfa' }} />
+                Transit stops ({transitStops.length})
+              </label>
+            </>
+          )}
+
+          <div className="legend-title legend-title-spaced">Base map</div>
+          <div className="map-theme-toggle" role="group" aria-label="Map theme">
+            <button
+              type="button"
+              className={mapTheme === 'light' ? 'active' : ''}
+              onClick={() => setMapTheme('light')}
+            >
+              Light
+            </button>
+            <button
+              type="button"
+              className={mapTheme === 'dark' ? 'active' : ''}
+              onClick={() => setMapTheme('dark')}
+            >
+              Dark
+            </button>
+          </div>
+
           <div className="legend-hint">
-            drag to orbit · scroll to zoom · click a building or permit pin for details
+            drag to orbit · scroll to zoom · click a building or pin for details
             <br />
             {buildings.length} buildings loaded
           </div>
+        </div>
+      )}
+
+      {buildings && buildings.length > 0 && (
+        <div className="map-attribution">
+          Map: © <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>, ©{' '}
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+            OpenStreetMap
+          </a>{' '}
+          contributors
         </div>
       )}
 

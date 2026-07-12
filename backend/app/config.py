@@ -42,6 +42,18 @@ DATASET_PROPERTY_ASSESSMENTS = "4bsw-nn7w"  # Property Assessments (address, val
 DATASET_BUILDING_PERMITS = "c2es-76ed"      # Building Permits
 DATASET_LAND_USE_DISTRICTS = "mw9j-jik5"    # Land Use Districts (zoning polygons)
 
+# Additional civic overlay layers -- verified live (within_box against the
+# study bbox returns real rows; see FIELD_CANDIDATES below for the exact
+# columns each response actually has):
+#   5qgc-b482 (Water Hydrants) -- only a "point" Point geometry column, no
+#     separate lat/lon fields; "status_ind" (ACTIVE/...) and "owner_cd".
+#   muzh-c9qc (Calgary Transit Stops) -- also "point"-only; "stop_name" and
+#     "status", but no route/mode column, so route_type/routes stay empty
+#     for live rows (mock data still fills them in for the demo).
+# Overridable via env vars in case a dataset id/shape changes.
+DATASET_FIRE_HYDRANTS = os.environ.get("DATASET_FIRE_HYDRANTS", "5qgc-b482")
+DATASET_TRANSIT_STOPS = os.environ.get("DATASET_TRANSIT_STOPS", "muzh-c9qc")
+
 SOCRATA_APP_TOKEN = os.environ.get("SOCRATA_APP_TOKEN", "")  # optional, avoids throttling
 
 # Candidate column names per logical field. First match wins.
@@ -94,6 +106,28 @@ FIELD_CANDIDATES = {
         "issued_date": ["issueddate", "issued_date", "applieddate"],
         "lat": ["latitude", "lat"],
         "lon": ["longitude", "lon", "long"],
+    },
+    "hydrants": {
+        # Verified against a live response (5qgc-b482). No lat/lon columns --
+        # only a "point" geometry -- see _extract_point_lonlat in calgary_client.py.
+        "id": ["globalid", "id", "asset_id"],
+        "status": ["status_ind", "status"],
+        "hydrant_type": ["owner_cd", "hydrant_type", "type"],
+        "lat": [],
+        "lon": [],
+        "geometry": ["point"],
+    },
+    "transit": {
+        # Verified against a live response (muzh-c9qc). Also "point"-only;
+        # no route/mode column exists in this dataset (route_type/routes
+        # stay empty for live rows).
+        "id": ["teleride_number", "stop_id", "id"],
+        "stop_name": ["stop_name", "name"],
+        "route_type": ["route_type", "mode"],
+        "routes": ["routes", "route_short_names"],
+        "lat": [],
+        "lon": [],
+        "geometry": ["point"],
     },
 }
 
@@ -162,7 +196,12 @@ FILTERABLE_FIELDS = {
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'masiv.db'}")
+# `.env`/`.env.example` ship with a present-but-empty `DATABASE_URL=` line
+# (documenting the setting without forcing a value) -- os.environ.get's
+# default only kicks in when the key is absent, not when it's empty, so
+# `or` is required here to actually get the "unset -> sqlite default"
+# fallback the comment below promises.
+DATABASE_URL = os.environ.get("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'masiv.db'}"
 
 # ---------------------------------------------------------------------------
 # Data source mode

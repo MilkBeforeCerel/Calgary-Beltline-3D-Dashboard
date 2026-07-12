@@ -27,6 +27,8 @@ def get_buildings():
     return MapDataOut(
         buildings=data["buildings"],
         permits=data["permits"],
+        hydrants=data["hydrants"],
+        transit_stops=data["transit_stops"],
         center=data["center"],
         source=data["source"],
     )

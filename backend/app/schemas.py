@@ -40,9 +40,34 @@ class PermitOut(BaseModel):
     source: Literal["live", "mock"] = "mock"
 
 
+class HydrantOut(BaseModel):
+    id: str
+    status: Optional[str] = None
+    hydrant_type: Optional[str] = None
+    x: float
+    y: float
+    lat: float
+    lon: float
+    source: Literal["live", "mock"] = "mock"
+
+
+class TransitStopOut(BaseModel):
+    id: str
+    stop_name: Optional[str] = None
+    route_type: Optional[str] = None
+    routes: List[str] = []
+    x: float
+    y: float
+    lat: float
+    lon: float
+    source: Literal["live", "mock"] = "mock"
+
+
 class MapDataOut(BaseModel):
     buildings: List[BuildingOut]
     permits: List[PermitOut]
+    hydrants: List[HydrantOut]
+    transit_stops: List[TransitStopOut]
     center: List[float]  # [lon, lat] of study area, for reference
     source: Literal["live", "mock"]
 

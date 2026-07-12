@@ -45,7 +45,7 @@ this dev sandbox has no route to data.calgary.ca):
 """
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -54,6 +54,8 @@ from app.config import (
     DATASET_BUILDINGS_3D,
     DATASET_PROPERTY_ASSESSMENTS,
     DATASET_BUILDING_PERMITS,
+    DATASET_FIRE_HYDRANTS,
+    DATASET_TRANSIT_STOPS,
     SOCRATA_APP_TOKEN,
     FIELD_CANDIDATES,
     STUDY_AREA_BBOX,
@@ -154,6 +156,36 @@ def _fetch_permits_raw() -> List[Dict[str, Any]]:
         f"{fc['lon'][0]} between {min_lon} and {max_lon}"
     )
     return _soql_get(DATASET_BUILDING_PERMITS, {"$where": where, "$limit": "200"})
+
+
+def _fetch_point_dataset_raw(
+    dataset_id: str, layer_key: str, limit: str = "200", order: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Shared bbox fetch for the point-ish overlay layers (hydrants, transit).
+    Both turned out to only carry a "point" Point geometry column live, not
+    separate lat/lon fields like permits does -- so this filters by
+    whichever the dataset actually has: a lat/lon `between` pair if
+    FIELD_CANDIDATES declares them, else `within_box` on the geometry
+    column. Raises immediately (caught by the per-layer try/except in
+    get_map_data) if the dataset id hasn't been configured -- see config.py.
+    """
+    if not dataset_id:
+        raise ValueError(f"no dataset id configured for '{layer_key}' -- skipping live fetch")
+    min_lon, min_lat, max_lon, max_lat = STUDY_AREA_BBOX
+    fc = FIELD_CANDIDATES[layer_key]
+    if fc.get("lat") and fc.get("lon"):
+        where = (
+            f"{fc['lat'][0]} between {min_lat} and {max_lat} AND "
+            f"{fc['lon'][0]} between {min_lon} and {max_lon}"
+        )
+    else:
+        geom_col = fc["geometry"][0]
+        where = f"within_box({geom_col}, {max_lat}, {min_lon}, {min_lat}, {max_lon})"
+    params = {"$where": where, "$limit": limit}
+    if order:
+        params["$order"] = order
+    return _soql_get(dataset_id, params)
 
 
 def _aggregate_building_facets(raw_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -278,6 +310,64 @@ def _normalize_permit(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+def _extract_point_lonlat(raw: Dict[str, Any], fc: Dict[str, List[str]]) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Permits carry separate lat/lon columns; hydrants/transit only carry a
+    "point" {"type": "Point", "coordinates": [lon, lat]} geometry -- try
+    lat/lon columns first, fall back to the geometry column declared under
+    FIELD_CANDIDATES[...]["geometry"].
+    """
+    lat = _to_float(_first_present(raw, fc.get("lat", [])))
+    lon = _to_float(_first_present(raw, fc.get("lon", [])))
+    if lat is not None and lon is not None:
+        return lon, lat
+    geom = _first_present(raw, fc.get("geometry", []))
+    if isinstance(geom, dict) and geom.get("type") == "Point":
+        coords = geom.get("coordinates")
+        if isinstance(coords, list) and len(coords) == 2:
+            return _to_float(coords[0]), _to_float(coords[1])
+    return None, None
+
+
+def _normalize_hydrant(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    fc = FIELD_CANDIDATES["hydrants"]
+    lon, lat = _extract_point_lonlat(raw, fc)
+    if lat is None or lon is None:
+        return None
+    x, y = geo_utils.lonlat_to_local_xy(lon, lat, ORIGIN_LON, ORIGIN_LAT)
+    return {
+        "id": str(_first_present(raw, fc["id"]) or f"HYDRANT-LIVE-{lat:.5f}-{lon:.5f}"),
+        "status": _first_present(raw, fc["status"]),
+        "hydrant_type": _first_present(raw, fc["hydrant_type"]),
+        "x": x,
+        "y": y,
+        "lat": lat,
+        "lon": lon,
+        "source": "live",
+    }
+
+
+def _normalize_transit_stop(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    fc = FIELD_CANDIDATES["transit"]
+    lon, lat = _extract_point_lonlat(raw, fc)
+    if lat is None or lon is None:
+        return None
+    x, y = geo_utils.lonlat_to_local_xy(lon, lat, ORIGIN_LON, ORIGIN_LAT)
+    routes_raw = _first_present(raw, fc["routes"])
+    routes = routes_raw if isinstance(routes_raw, list) else ([routes_raw] if routes_raw else [])
+    return {
+        "id": str(_first_present(raw, fc["id"]) or f"TRANSIT-LIVE-{lat:.5f}-{lon:.5f}"),
+        "stop_name": _first_present(raw, fc["stop_name"]),
+        "route_type": _first_present(raw, fc["route_type"]),
+        "routes": routes,
+        "x": x,
+        "y": y,
+        "lat": lat,
+        "lon": lon,
+        "source": "live",
+    }
+
+
 def get_map_data() -> Dict[str, Any]:
     """
     Top-level entry point used by the API routers. Returns:
@@ -305,9 +395,25 @@ def get_map_data() -> Dict[str, Any]:
             logger.warning("Permit fetch failed, continuing with permits=[]: %s", e)
             permits = []
 
+        try:
+            hydrants_raw = _fetch_point_dataset_raw(DATASET_FIRE_HYDRANTS, "hydrants", limit="500")
+            hydrants = [h for h in (_normalize_hydrant(r) for r in hydrants_raw) if h is not None]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Hydrant fetch failed, continuing with hydrants=[]: %s", e)
+            hydrants = []
+
+        try:
+            transit_raw = _fetch_point_dataset_raw(DATASET_TRANSIT_STOPS, "transit")
+            transit_stops = [t for t in (_normalize_transit_stop(r) for r in transit_raw) if t is not None]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Transit stop fetch failed, continuing with transit_stops=[]: %s", e)
+            transit_stops = []
+
         return {
             "buildings": buildings,
             "permits": permits,
+            "hydrants": hydrants,
+            "transit_stops": transit_stops,
             "center": [ORIGIN_LON, ORIGIN_LAT],
             "source": "live",
         }
@@ -322,9 +428,13 @@ def get_map_data() -> Dict[str, Any]:
 def _mock_payload() -> Dict[str, Any]:
     buildings = mock_data.generate_buildings()
     permits = mock_data.generate_permits(buildings)
+    hydrants = mock_data.generate_fire_hydrants(buildings)
+    transit_stops = mock_data.generate_transit_stops(buildings)
     return {
         "buildings": buildings,
         "permits": permits,
+        "hydrants": hydrants,
+        "transit_stops": transit_stops,
         "center": [ORIGIN_LON, ORIGIN_LAT],
         "source": "mock",
     }
