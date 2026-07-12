@@ -1,13 +1,10 @@
 """
 database.py
 ------------
-SQLite engine/session setup for project persistence (spec step 6). Sync
-engine is intentional -- write volume here is a handful of rows per user,
-FastAPI already runs sync `def` routes in a threadpool, and pulling in an
-async DB stack (aiosqlite, async sessions) would be pure overhead for a
-prototype this size. Classic declarative_base()/Column() style is used
-(not the newer Mapped[]/mapped_column() typed style) to match the plain,
-unfancy type hints used throughout the rest of this backend.
+SQLite engine/session setup for project persistence. Sync engine is
+intentional -- write volume is a handful of rows per user, and FastAPI
+already runs sync `def` routes in a threadpool, so an async DB stack
+would be pure overhead for a prototype this size.
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker

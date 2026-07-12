@@ -62,11 +62,6 @@ def point_in_polygon(point: Tuple[float, float], ring: Sequence[Sequence[float]]
     return inside
 
 
-def bbox_contains(lon: float, lat: float, bbox: Tuple[float, float, float, float]) -> bool:
-    min_lon, min_lat, max_lon, max_lat = bbox
-    return min_lon <= lon <= max_lon and min_lat <= lat <= max_lat
-
-
 def polygon_area(ring: Sequence[Sequence[float]]) -> float:
     """
     Shoelace formula. Works on raw lon/lat OR projected local meters -- only

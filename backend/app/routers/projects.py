@@ -1,8 +1,8 @@
 """
 routers/projects.py
 --------------------
-Step 6: username-based project persistence. No real auth -- a username is
-just a find-or-create identifier, no password, as the spec allows.
+Username-based project persistence. No real auth -- a username is just a
+find-or-create identifier, no password.
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session

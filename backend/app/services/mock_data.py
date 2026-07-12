@@ -2,20 +2,9 @@
 mock_data.py
 ------------
 Deterministic, realistic-looking data for the study area, used as a
-fallback when the live Calgary Open Data API is unreachable (offline dev,
-network restrictions, rate limiting, or a schema change on the City's end)
-and for DATA_SOURCE_MODE=mock.
-
-Nothing here is randomized without a fixed seed, so results are stable
-across restarts (important for demoing save/load of projects).
-
-The layout approximates 4 city blocks along 17 Ave SW / 1 St SW in the
-Beltline, with a mix of building heights, land-use districts, and permit
-activity so every required query type in the spec has real matches:
-  - "buildings over 100 feet" (~30m)
-  - "commercial buildings"
-  - "buildings in RC-G zoning"
-  - "buildings less than $500,000 in value"
+fallback when the live Calgary Open Data API is unreachable and for
+DATA_SOURCE_MODE=mock. Everything uses a fixed random seed so results are
+stable across restarts (important for demoing save/load of projects).
 """
 import random
 from typing import Dict, List
@@ -47,11 +36,10 @@ def _make_block(block_row: int, block_col: int) -> List[dict]:
     """Generate a small grid of buildings for one city block."""
     buildings = []
     n_buildings = _RNG.randint(4, 6)
-    block_origin_x = block_col * 110.0  # meters, ~1 block spacing
+    block_origin_x = block_col * 110.0
     block_origin_y = block_row * 110.0
 
     for i in range(n_buildings):
-        # Lay buildings out along the block edge with some footprint variety.
         w = _RNG.uniform(14, 26)
         d = _RNG.uniform(14, 26)
         bx = block_origin_x + (i % 3) * 32 + _RNG.uniform(-3, 3)
@@ -103,8 +91,8 @@ def _make_block(block_row: int, block_col: int) -> List[dict]:
 
 def generate_buildings() -> List[dict]:
     buildings = []
-    for row in range(2):      # 2 rows
-        for col in range(2):  # x 2 cols = 4 blocks
+    for row in range(2):
+        for col in range(2):
             buildings.extend(_make_block(row, col))
     return buildings
 

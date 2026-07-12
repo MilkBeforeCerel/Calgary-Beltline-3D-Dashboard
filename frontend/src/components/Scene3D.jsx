@@ -110,16 +110,11 @@ function buildingMesh(building) {
  * Builds a "pin" (thin stem + head) as two flat sibling meshes, NOT nested
  * in a THREE.Group -- Object3D.raycast() is a no-op, so a Group would
  * silently swallow raycasts and make pins unclickable. Both meshes carry
- * userData[userKey] = item so either one can be hit directly.
+ * userData[userKey] = item so either one can be hit directly. Shared by
+ * every point-overlay layer (permits, hydrants, transit).
  *
- * Shared by every point-overlay layer (permits, hydrants, transit)
- * -- only the color, size, and head shape vary per layer.
- *
- * Positions must match the same world-space transform buildings undergo:
- * buildingMesh() rotates the footprint shape so local (x, y) -> world
- * (x, -y) (see the rotateX(-Math.PI/2) comment above). Marker x/y are
- * already local meters relative to the same study-area origin, so pins use
- * worldZ = -item.y to line up with the buildings they sit beside.
+ * worldZ = -item.y to match the same (x, y) -> world (x, -y) flip
+ * buildingMesh() applies to footprints, so pins line up with buildings.
  */
 function buildMarkerMeshes(item, userKey, color, opts = {}) {
   const {
@@ -176,14 +171,10 @@ function buildTransitMeshes(stop) {
   })
 }
 
-// Fixed multi-resolution "rings" (a sharp patch + a coarser patch + a wide
-// city layer, all loaded simultaneously) always had a visible boundary the
-// moment the camera crossed from one ring into the next -- three different
-// images stitched together, not one map. A real map instead shows exactly
-// ONE resolution at a time, chosen from how far the camera actually is, and
-// swaps to a new resolution+extent as the camera moves -- see the dynamic
-// tile-loading effect below (keyed on camera distance from
-// controls.target, not a fixed set of pre-baked bboxes).
+// Exactly one tile resolution is shown at a time, chosen from camera
+// distance, and swapped as the camera moves (see the dynamic tile-loading
+// effect below) -- otherwise multiple simultaneously-visible resolutions
+// show a visible seam where they meet.
 const ZOOM_REFERENCE_DISTANCE = 300 // camera distance (m) this reference zoom looks right at
 const ZOOM_REFERENCE_LEVEL = 17
 const MIN_TILE_ZOOM = 10
@@ -222,22 +213,12 @@ function mapTileUrl(x, y, zoom, theme) {
 }
 
 /**
- * Real map background, replacing the old flat dark ground plane. One
- * textured quad per tile (CARTO, CORS-enabled, no API key) positioned via
- * the exact same equirectangular projection (mapTiles.js#lonlatToLocalXY)
- * the backend used for buildings/pins, using the same origin
- * (`center` from the API response) -- so the map lines up with everything
- * already in the scene without a separate alignment step. Each tile starts
- * as a flat-colored placeholder and swaps in its texture once loaded, so a
- * slow/failed tile degrades to a plain rectangle instead of a hole in the
- * map.
- *
- * Always called with exactly one (bbox, zoom) pair -- the caller (the
- * dynamic-reload effect below) picks both from the current camera distance,
- * so there is only ever one resolution on screen at a time, like a real
- * map. `maxAnisotropy` is queried from the actual GPU
- * (renderer.capabilities) rather than guessed, so oblique-angle sharpening
- * uses everything the hardware supports.
+ * One textured quad per map tile (CARTO, CORS-enabled, no API key),
+ * positioned via the same equirectangular projection and origin the
+ * backend used for buildings/pins, so the map lines up with the rest of
+ * the scene. Each tile starts as a flat-colored placeholder and swaps in
+ * its texture once loaded, so a slow/failed tile degrades to a plain
+ * rectangle instead of a hole in the map.
  */
 function buildMapTilesGroup(bbox, zoom, originLon, originLat, theme, maxAnisotropy) {
   const group = new THREE.Group()
@@ -360,9 +341,8 @@ export default function Scene3D({
   const hostRef = useRef(null)
   const stateRef = useRef({})
 
-  // Keep the latest selection/filter/visibility state available to effects
-  // and callbacks that intentionally don't re-subscribe on every render
-  // (the pointerdown handler in particular, set up once below).
+  // Keeps latest state readable by the pointerdown handler, which is set
+  // up once below and intentionally doesn't re-subscribe on every render.
   stateRef.current.selectedType = selectedType
   stateRef.current.selectedId = selectedId
   stateRef.current.matchedIds = matchedIds
@@ -380,27 +360,17 @@ export default function Scene3D({
     const height = host.clientHeight
 
     const scene = new THREE.Scene()
-    // Fallback for anything beyond the map-tile grid (or before tiles
-    // load) instead of default WebGL black; both this and the fog color
-    // get kept in sync with the light/dark theme in the map-tiles effect
-    // below (a hardcoded dark fog over a light-theme map is what caused
-    // the whole map to fade to a solid dark wall while still well short of
-    // maxDistance -- see that effect for the actual per-theme colors).
+    // Fallback background/fog for before tiles load; kept in sync with the
+    // light/dark theme in the map-tiles effect below.
     scene.background = new THREE.Color(GROUND)
     // far must clear controls.maxDistance (45000) with room to spare, or
-    // the camera can reach a distance that's already fully fogged out --
-    // i.e. zooming out "all the way" makes the whole scene disappear into
-    // flat fog color before you even stop scrolling.
+    // zooming out all the way fades the scene to flat fog color early.
     scene.fog = new THREE.Fog(0x080b10, 4000, 55000)
 
-    // near=0.1 with far=60000 is a 600,000:1 ratio -- way more than a
-    // standard (non-logarithmic) depth buffer can resolve, which is what
-    // caused the flickering/"buzzy" z-fighting between the stacked map
-    // tile layers (and roads/ground) at oblique angles once the camera
-    // could pull back to city scale. A near plane of 1 (nothing in this
-    // scene needs sub-meter near-clip precision) plus a logarithmic depth
-    // buffer on the renderer fixes that properly instead of just shrinking
-    // far and losing the city view.
+    // near=1 (not 0.1) plus a logarithmic depth buffer avoids z-fighting
+    // between stacked map-tile layers at oblique angles and city-scale
+    // camera distance -- a standard depth buffer can't resolve a
+    // near:far ratio this large.
     const camera = new THREE.PerspectiveCamera(50, width / height, 1, 60000)
     camera.position.set(160, 140, 200)
 
@@ -548,15 +518,8 @@ export default function Scene3D({
     }
   }, [buildings])
 
-  // ---- dynamic map-tile background: exactly one resolution on screen at a
-  // time, picked from the camera's current distance and positioned around
-  // wherever controls.target currently is -- the same "one zoom level at a
-  // time" behavior a normal 2D map has, so there's never a seam between
-  // simultaneously-visible resolutions the way a fixed set of pre-baked
-  // rings had. Rebuilds (debounced, so a drag/zoom gesture doesn't spam
-  // reloads mid-motion) as the camera moves; the light/dark theme swap also
-  // forces a rebuild since it's a different set of tile images, not
-  // something a texture swap alone can handle.
+  // ---- dynamic map-tile background: rebuilds (debounced) around
+  // controls.target as the camera moves, and on light/dark theme swap ----
   useEffect(() => {
     const { scene, renderer, camera, controls } = stateRef.current
     if (!scene || !mapCenter || !camera || !controls) return

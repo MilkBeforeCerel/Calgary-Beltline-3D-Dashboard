@@ -4,13 +4,10 @@ config.py
 Central place for every "knob" the app needs. Nothing dataset- or
 credential-specific should be hard-coded anywhere else in the backend.
 
-NOTE ON CALGARY OPEN DATA SCHEMAS:
 Socrata (data.calgary.ca) column names occasionally drift when the City
-republishes a dataset. Rather than hard-code a single field name and let
-the whole pipeline break, `services/calgary_client.py` tries a short list
-of CANDIDATE field names per logical attribute (see FIELD_CANDIDATES
-below). If the City renames a column, add the new name to the relevant
-list -- no other code changes needed.
+republishes a dataset, so `services/calgary_client.py` tries a short list
+of CANDIDATE field names per logical attribute (FIELD_CANDIDATES below)
+instead of a single hard-coded name.
 """
 import os
 from pathlib import Path
@@ -20,66 +17,32 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-# ---------------------------------------------------------------------------
-# Study area: 3-4 city blocks in Calgary's Beltline (dense, mixed-use, lots
-# of permits + varied building heights -> makes for a good demo).
-# Bounding box is (min_lon, min_lat, max_lon, max_lat).
-# Roughly 17 Ave SW / 1 St SW area, Beltline.
-# ---------------------------------------------------------------------------
+# Roughly 17 Ave SW / 1 St SW, Beltline -- (min_lon, min_lat, max_lon, max_lat).
 STUDY_AREA_BBOX = (-114.0745, 51.0370, -114.0670, 51.0420)
 STUDY_AREA_CENTER = (
     (STUDY_AREA_BBOX[0] + STUDY_AREA_BBOX[2]) / 2,
     (STUDY_AREA_BBOX[1] + STUDY_AREA_BBOX[3]) / 2,
 )
 
-# ---------------------------------------------------------------------------
-# Socrata (Open Calgary) dataset ids -- confirmed via data.calgary.ca
-# ---------------------------------------------------------------------------
 SOCRATA_BASE_URL = "https://data.calgary.ca/resource"
 
 DATASET_BUILDINGS_3D = "cchr-krqg"          # 3D Buildings - Citywide (footprint + height)
 DATASET_PROPERTY_ASSESSMENTS = "4bsw-nn7w"  # Property Assessments (address, value, land use)
 DATASET_BUILDING_PERMITS = "c2es-76ed"      # Building Permits
-DATASET_LAND_USE_DISTRICTS = "mw9j-jik5"    # Land Use Districts (zoning polygons)
 
-# Additional civic overlay layers -- verified live (within_box against the
-# study bbox returns real rows; see FIELD_CANDIDATES below for the exact
-# columns each response actually has):
-#   5qgc-b482 (Water Hydrants) -- only a "point" Point geometry column, no
-#     separate lat/lon fields; "status_ind" (ACTIVE/...) and "owner_cd".
-#   muzh-c9qc (Calgary Transit Stops) -- also "point"-only; "stop_name" and
-#     "status", but no route/mode column, so route_type/routes stay empty
-#     for live rows (mock data still fills them in for the demo).
 # Overridable via env vars in case a dataset id/shape changes.
 DATASET_FIRE_HYDRANTS = os.environ.get("DATASET_FIRE_HYDRANTS", "5qgc-b482")
 DATASET_TRANSIT_STOPS = os.environ.get("DATASET_TRANSIT_STOPS", "muzh-c9qc")
 
 SOCRATA_APP_TOKEN = os.environ.get("SOCRATA_APP_TOKEN", "")  # optional, avoids throttling
 
-# Candidate column names per logical field. First match wins.
-#
-# UPDATED from real `curl` responses against data.calgary.ca (verified by
-# the user, since this dev environment can't reach that host itself):
-#
-#   cchr-krqg (3D Buildings) sample row:
-#     {"grd_elev_min_x":..., "grd_elev_min_z":"1050.91", "rooftop_elev_z":"1055.11...",
-#      "stage":"CONSTRUCTED", "struct_id":"2376084",
-#      "polygon": {"type":"Polygon","coordinates":[[[lon,lat], ...]]}}
-#     NOTE: geometry type is "Polygon" (coordinates[0] is the ring), NOT
-#     "MultiPolygon" (coordinates[0][0]) as originally assumed. There is no
-#     direct height column -- height must be computed as
-#     rooftop_elev_z - grd_elev_min_z. Each row appears to represent one
-#     roof facet, grouped by struct_id (a real building can span several
-#     rows) -- see calgary_client._aggregate_building_facets.
-#
-#   4bsw-nn7w (Property Assessments) sample row:
-#     {"address":"15 DEERMEADE PL SE", "assessed_value":"729000.0",
-#      "land_use_designation":"R-CG", "year_of_construction":"1981.0",
-#      "multipolygon": {"type":"MultiPolygon","coordinates":[[[[lon,lat],...]]]}}
-#     NOTE: no latitude/longitude columns -- join must be done via the
-#     `multipolygon` parcel geometry, not a lat/lon point.
+# Candidate column names per logical field, first match wins.
 FIELD_CANDIDATES = {
     "buildings": {
+        # Geometry is "Polygon" (coordinates[0] is the ring), not "MultiPolygon".
+        # No direct height column -- height = rooftop_elev_z - grd_elev_min_z,
+        # and each row is one roof facet grouped by struct_id (see
+        # calgary_client._aggregate_building_facets).
         "id": ["struct_id", "structid", "bldg_id", "objectid", ":id"],
         "rooftop_elev_z": ["rooftop_elev_z", "rooftop_elev"],
         "grd_elev_min_z": ["grd_elev_min_z", "grd_elev_z", "ground_elev"],
@@ -87,6 +50,7 @@ FIELD_CANDIDATES = {
         "stage": ["stage"],
     },
     "assessments": {
+        # No lat/lon columns -- join is done via the `multipolygon` parcel geometry.
         "address": ["address", "full_address", "location_address"],
         "assessed_value": ["assessed_value", "assessedvalue", "value"],
         "land_use": ["land_use_designation", "landuse", "assessment_class_description"],
@@ -95,9 +59,6 @@ FIELD_CANDIDATES = {
         "geometry": ["multipolygon", "the_geom", "polygon", "shape"],
     },
     "permits": {
-        # Not yet verified against a live response (out of scope for the
-        # current buildings-only pass) -- candidates are best-guess based
-        # on typical Socrata / Open Calgary permit dataset conventions.
         "id": ["permitnum", "permit_num", "permit_number", ":id"],
         "address": ["originaladdress", "address", "permit_address"],
         "permit_type": ["permittype", "permit_type", "workclassgroup"],
@@ -108,8 +69,8 @@ FIELD_CANDIDATES = {
         "lon": ["longitude", "lon", "long"],
     },
     "hydrants": {
-        # Verified against a live response (5qgc-b482). No lat/lon columns --
-        # only a "point" geometry -- see _extract_point_lonlat in calgary_client.py.
+        # Only a "point" geometry, no lat/lon columns -- see
+        # _extract_point_lonlat in calgary_client.py.
         "id": ["globalid", "id", "asset_id"],
         "status": ["status_ind", "status"],
         "hydrant_type": ["owner_cd", "hydrant_type", "type"],
@@ -118,9 +79,8 @@ FIELD_CANDIDATES = {
         "geometry": ["point"],
     },
     "transit": {
-        # Verified against a live response (muzh-c9qc). Also "point"-only;
-        # no route/mode column exists in this dataset (route_type/routes
-        # stay empty for live rows).
+        # Only a "point" geometry; no route/mode column, so route_type/routes
+        # stay empty for live rows (mock data fills them in for the demo).
         "id": ["teleride_number", "stop_id", "id"],
         "stop_name": ["stop_name", "name"],
         "route_type": ["route_type", "mode"],
@@ -131,14 +91,9 @@ FIELD_CANDIDATES = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Zoning reference data -- single source of truth shared by mock_data.py
-# (generating realistic demo buildings), llm_service.py (few-shot prompt
-# context + fallback keyword parser), and documented here for anyone reading
-# the schema. Scene3D.jsx's colorForBuilding() on the frontend mirrors the
-# COMMERCIAL/RESIDENTIAL prefix split below -- keep them in sync by hand if
-# either changes.
-# ---------------------------------------------------------------------------
+# Single source of truth for zoning, shared by mock_data.py and
+# llm_service.py. Scene3D.jsx's colorForBuilding() mirrors the
+# COMMERCIAL/RESIDENTIAL prefix split -- keep them in sync by hand.
 KNOWN_ZONING_CODES = ["R-CG", "CC-MH", "CC-COR", "DC", "M-C1"]
 LAND_USE_BY_ZONE = {
     "R-CG": "Residential - Grade-Oriented Infill",
@@ -150,21 +105,15 @@ LAND_USE_BY_ZONE = {
 COMMERCIAL_ZONING_PREFIXES = ("CC", "DC")
 RESIDENTIAL_ZONING_PREFIXES = ("R-", "M-")
 
-# ---------------------------------------------------------------------------
-# LLM (natural-language query parsing)
-# ---------------------------------------------------------------------------
-# Groq offers a free-tier OpenAI-compatible chat completions API and is the
-# default here because it's fast and has a generous free quota. Swap in any
-# OpenAI-compatible endpoint (Hugging Face Inference, OpenAI, etc.) by
-# changing LLM_BASE_URL / LLM_MODEL.
+# Groq offers a free-tier OpenAI-compatible chat completions API. Swap in
+# any OpenAI-compatible endpoint by changing LLM_BASE_URL / LLM_MODEL.
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
 LLM_MODEL = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
 
-# Fields the LLM (and the keyword fallback) is allowed to filter buildings
-# on. "unit" tells llm_service._convert_units what deterministic conversion
-# to apply -- the LLM itself is only asked for the raw value + unit it saw
-# in the query text, never for unit math (see llm_service.py docstring).
+# Fields the LLM (and the keyword fallback) may filter buildings on. "unit"
+# tells llm_service._convert_units what deterministic conversion to apply --
+# the LLM is only asked for the raw value + unit, never for unit math.
 FILTERABLE_FIELDS = {
     "height_m": {
         "type": "number",
@@ -193,22 +142,14 @@ FILTERABLE_FIELDS = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Database
-# ---------------------------------------------------------------------------
-# `.env`/`.env.example` ship with a present-but-empty `DATABASE_URL=` line
-# (documenting the setting without forcing a value) -- os.environ.get's
-# default only kicks in when the key is absent, not when it's empty, so
-# `or` is required here to actually get the "unset -> sqlite default"
-# fallback the comment below promises.
+# `.env`/`.env.example` ship with a present-but-empty DATABASE_URL= line, and
+# os.environ.get's default only kicks in when the key is absent (not empty),
+# so `or` is needed for the "unset -> sqlite default" fallback.
 DATABASE_URL = os.environ.get("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'masiv.db'}"
 
-# ---------------------------------------------------------------------------
-# Data source mode
-# ---------------------------------------------------------------------------
-# "live"  -> always hit data.calgary.ca, error if unreachable
-# "auto"  -> try live, fall back to bundled mock data on any failure (default)
-# "mock"  -> always use bundled mock data (useful for offline dev/demo)
+# "live" -> always hit data.calgary.ca, error if unreachable
+# "auto" -> try live, fall back to bundled mock data on any failure (default)
+# "mock" -> always use bundled mock data (offline dev/demo)
 DATA_SOURCE_MODE = os.environ.get("DATA_SOURCE_MODE", "auto")
 
 HTTP_TIMEOUT_SECONDS = 15

@@ -1,7 +1,7 @@
 """
 schemas.py
 ----------
-Pydantic response models for the buildings API (steps 1-2 scope).
+Pydantic request/response models for the API.
 """
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ class MapDataOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Natural-language query / filter (spec step 5)
+# Natural-language query / filter
 # ---------------------------------------------------------------------------
 FilterField = Literal["height_m", "zoning", "land_use", "assessed_value", "year_built"]
 FilterOp = Literal["gt", "gte", "lt", "lte", "eq", "neq", "contains", "in"]
@@ -104,7 +104,7 @@ class QueryOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Project persistence (spec step 6)
+# Project persistence
 # ---------------------------------------------------------------------------
 class ProjectIn(BaseModel):
     username: str = Field(min_length=1, max_length=64)

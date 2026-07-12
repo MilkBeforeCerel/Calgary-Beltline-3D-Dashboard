@@ -4,44 +4,22 @@ calgary_client.py
 Fetches and normalizes data from City of Calgary Open Data (Socrata)
 datasets, joining them into a single "enriched building" record.
 
-Field names and geometry shapes below are taken from REAL sample
-responses (verified via `curl` against the live API by the user, since
-this dev sandbox has no route to data.calgary.ca):
+Notes on dataset shapes:
+  cchr-krqg (3D Buildings) is one row per ROOF FACET, not per building --
+    there's no direct height column (height = rooftop_elev_z -
+    grd_elev_min_z), and a real building can span several facet rows
+    sharing the same struct_id (e.g. a stepped roofline), so rows are
+    grouped by struct_id and reduced to one record (see
+    _aggregate_building_facets). The largest single facet ring is used as
+    a practical stand-in footprint -- a true polygon union would need a
+    GIS library like shapely.
 
-  cchr-krqg (3D Buildings) -- one row per ROOF FACET, not per building:
-    {
-      "struct_id": "2376084",
-      "stage": "CONSTRUCTED",
-      "grd_elev_min_z": "1050.91",       # ground elevation, meters ASL
-      "rooftop_elev_z": "1055.115...",   # roof elevation, meters ASL
-      "polygon": {"type": "Polygon", "coordinates": [[[lon,lat], ...]]}
-    }
-    There is no direct height column -- height = rooftop_elev_z -
-    grd_elev_min_z. A real building can be split across several facet
-    rows sharing the same struct_id (e.g. a stepped roofline), so rows
-    are grouped by struct_id: height = max(rooftop_elev_z) -
-    min(grd_elev_min_z) across the group, and the largest single facet
-    ring is used as a practical stand-in footprint (a true polygon union
-    would need a GIS library like shapely; noted as a known
-    simplification -- see README).
+  4bsw-nn7w (Property Assessments) has no lat/lon columns -- joined to
+    buildings via point-in-polygon against each parcel's multipolygon.
 
-  4bsw-nn7w (Property Assessments) -- one row per parcel:
-    {
-      "address": "15 DEERMEADE PL SE",
-      "assessed_value": "729000.0",
-      "land_use_designation": "R-CG",      # this *is* the zoning code
-      "year_of_construction": "1981.0",
-      "multipolygon": {"type": "MultiPolygon", "coordinates": [[[[lon,lat], ...]]]}
-    }
-    No lat/lon columns -- joined to buildings via point-in-polygon: each
-    building's footprint centroid is tested against each parcel's
-    multipolygon boundary.
-
-  c2es-76ed (Building Permits) -- wired into get_map_data() below, but
-    field names are still best-guess (see _fetch_permits_raw for why: this
-    sandbox cannot reach data.calgary.ca to verify them against a live
-    response). Degrades to permits=[] on fetch failure without touching the
-    buildings/assessments result, same honesty rule as the assessments join.
+  c2es-76ed (Building Permits) field names are best-guess (unverified
+    against a live response -- see _fetch_permits_raw). Degrades to
+    permits=[] on fetch failure without touching buildings/assessments.
 """
 import logging
 from collections import defaultdict
@@ -141,14 +119,8 @@ def _fetch_assessments_raw() -> List[Dict[str, Any]]:
 
 
 def _fetch_permits_raw() -> List[Dict[str, Any]]:
-    # NOTE: field candidates for this dataset (c2es-76ed) are best-guess,
-    # taken from typical Open Calgary permit dataset conventions -- this
-    # sandbox's egress proxy blocks data.calgary.ca outright, so the shape
-    # below has never been exercised against a real response the way
-    # buildings/assessments were (see README "Verifying against live data").
-    # Wired into get_map_data() below with the same resilience pattern as
-    # the assessments join: a failure here degrades to permits=[] on an
-    # otherwise-live response, it never falls back to mock permits.
+    # Field candidates for c2es-76ed are best-guess, based on typical Open
+    # Calgary permit dataset conventions -- unverified against a live response.
     min_lon, min_lat, max_lon, max_lat = STUDY_AREA_BBOX
     fc = FIELD_CANDIDATES["permits"]
     where = (

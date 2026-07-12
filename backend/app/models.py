@@ -1,15 +1,15 @@
 """
 models.py
 ---------
-SQLAlchemy ORM models for project persistence (spec step 6). Two tables:
-a User identified only by a username (no password -- the spec explicitly
-doesn't require real auth), and a Project owned by a User that stores the
-active filter (a list of FilterCondition, as JSON) under a name.
+SQLAlchemy ORM models for project persistence. Two tables: a User
+identified only by a username (no password), and a Project owned by a
+User that stores the active filter (a list of FilterCondition, as JSON)
+under a name.
 
 Buildings/permits are NOT modeled here -- they're fetched fresh per
 request from Calgary Open Data (or mock) and never persisted; only the
 *filter a user built* is worth saving. See docs/UML.md for the full
-picture, including the transient (non-persisted) DTOs.
+picture.
 """
 from datetime import datetime
 
